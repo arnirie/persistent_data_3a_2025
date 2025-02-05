@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:persistent_data/car.dart';
+import 'package:persistent_data/notes.dart';
+import 'package:realm/realm.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Hive.initFlutter();
+void main() {
   runApp(ListApp());
 }
 
@@ -27,106 +26,105 @@ class ListScreen extends StatefulWidget {
 }
 
 class _ListScreenState extends State<ListScreen> {
-  final itemCtrl = TextEditingController();
-  late Box box;
-  List items = [];
+  late Realm realm;
+  late RealmResults<Note> notes;
 
-  void initBox() async {
-    box = await Hive.openBox('items');
-    // box.clear();
-    loadBox();
+  final titleCtrl = TextEditingController();
+  final contentCtrl = TextEditingController();
+
+  void initRealm() {
+    var config = Configuration.local([Note.schema]);
+    realm = Realm(config);
+    loadNotes();
   }
 
-  void loadBox() {
-    items = box.values.toList();
+  void loadNotes() {
+    notes = realm.all<Note>();
     setState(() {});
-    print(box.keys);
-    print(box.values);
   }
 
   @override
   void initState() {
-    // TODO: implement initState
     super.initState();
-    initBox();
+    initRealm();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Lists'),
-        // actions: [
-        //   IconButton(
-        //     onPressed: addItem,
-        //     icon: Icon(Icons.add),
-        //   ),
-        // ],
-      ),
       body: ListView.builder(
-        itemBuilder: (_, index) {
+        itemCount: notes.length,
+        itemBuilder: (context, index) {
+          var note = notes[index];
           return Dismissible(
-              key: UniqueKey(),
-              onDismissed: (direction) {
-                delete(index);
-              },
-              child: Card(child: ListTile(title: Text(items[index]))));
+            key: UniqueKey(),
+            onDismissed: (_) {
+              doDelete(note);
+              loadNotes();
+            },
+            child: Card(
+              child: ListTile(
+                title: Text(note.title),
+                subtitle: Text(note.content),
+              ),
+            ),
+          );
         },
-        itemCount: items.length,
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: addItem,
-        child: Icon(
-          Icons.add,
-        ),
+        onPressed: showAddDialog,
+        child: Icon(Icons.add),
       ),
     );
   }
 
-  void addItem() {
+  void showAddDialog() {
     showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Add Item'),
-        content: TextField(
-          controller: itemCtrl,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-          ElevatedButton(
-            onPressed: add,
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
+        context: context,
+        builder: (_) {
+          return AlertDialog(
+            actions: [
+              ElevatedButton(
+                onPressed: doAdd,
+                child: Text(
+                  'Add',
+                ),
+              )
+            ],
+            title: Text('Add Note'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleCtrl,
+                ),
+                TextField(
+                  controller: contentCtrl,
+                ),
+              ],
+            ),
+          );
+        });
   }
 
-  void add() async {
-    await box.add(itemCtrl.text);
-    itemCtrl.clear();
-    Navigator.of(context).pop();
-    loadBox();
+  void doAdd() {
+    realm.write(() {
+      var n = Note(titleCtrl.text, contentCtrl.text, date: DateTime.now());
+      realm.add(n);
+      print('added');
+      loadNotes();
+    });
   }
 
-  void delete(int i) async {
-    print('delete $i');
-    await box.deleteAt(i); //index
-    loadBox();
+  void doDelete(Note n) {
+    realm.write(() {
+      realm.delete(n);
+    });
   }
 
-  // void add() async {
-  //   // var box = Hive.box('items');
-  //   var box = await Hive.openBox('items');
-  //   // box.put('item', itemCtrl.text);
-  //   box.add(itemCtrl.text);
-  //   // print('placed inside the box');
-  //   // print(box.get('item'));
-  //   // box.clear();
-  //   print(box.values);
-  //   print('${box.keys} keys');
-  // }
+  void doUpdate(Note n) {
+    realm.write(() {
+      n.title = '';
+    });
+  }
 }
